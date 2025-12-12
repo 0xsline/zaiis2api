@@ -63,11 +63,11 @@ def update_token_info(token_id):
     db.session.commit()
     return True, "Success"
 
-def refresh_all_tokens():
+def refresh_all_tokens(force=False):
     # Caller must ensure app context
     tokens = Token.query.filter_by(is_active=True).all()
     for token in tokens:
-        if token.at_expires and token.at_expires > datetime.now() + timedelta(minutes=10):
+        if not force and token.at_expires and token.at_expires > datetime.now() + timedelta(minutes=10):
             continue
         
         try:

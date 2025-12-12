@@ -16,9 +16,9 @@ import services
 
 # Initialize App
 app = Flask(__name__, static_folder='static', template_folder='static')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///zai2api.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URI', 'sqlite:///zai2api.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'your-secret-key-change-me' # Should be random
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-me')
 
 # Initialize DB
 db.init_app(app)
@@ -174,6 +174,7 @@ def get_tokens():
             'video_enabled': t.video_enabled,
             'image_concurrency': t.image_concurrency,
             'video_concurrency': t.video_concurrency,
+            'zai_token': t.zai_token,
             'st': t.discord_token[:10] + '...' # Masked for security? Frontend uses it for edit.
             # Ideally return full ST for edit, or handle separately. Frontend calls edit and pre-fills ST.
             # Let's return full ST for now as admin panel.

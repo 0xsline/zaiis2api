@@ -51,11 +51,14 @@
                 <button onclick="openAddTokenModal()" class="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground h-9 px-4 text-sm font-medium hover:bg-primary/90">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                     新增 Token
-                        </button>
+                </button>
+                <button onclick="refreshAllZaiTokens()" class="inline-flex items-center justify-center rounded-md bg-secondary text-secondary-foreground h-9 px-4 text-sm font-medium hover:bg-secondary/80">
+                    一键刷新 ZaiToken
+                </button>
                 <button onclick="loadTokens()" class="inline-flex items-center justify-center rounded-md border border-input bg-background h-9 px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
                     刷新
-                        </button>
-                </div>
+                </button>
+            </div>
                 
             <!-- Table -->
             <div class="rounded-md border border-border overflow-hidden">
@@ -271,11 +274,32 @@
                     <td class="px-4 py-2 text-xs">${t.error_count || 0}</td>
                     <td class="px-4 py-2 text-xs text-muted-foreground">${t.remark || '-'}</td>
                     <td class="px-4 py-2 text-right space-x-1">
+                        <button onclick="refreshTokenAT(${t.id})" class="text-xs text-blue-600 hover:underline">更新</button>
                         <button onclick="toggleToken(${t.id}, ${t.is_active})" class="text-xs text-blue-600 hover:underline">${t.is_active ? '禁用' : '启用'}</button>
                         <button onclick="deleteToken(${t.id})" class="text-xs text-red-600 hover:underline">删除</button>
                     </td>
                 </tr>
             `}).join('');
+        }
+
+        async function refreshAllZaiTokens() {
+            if (!confirm('确定要刷新所有 Token 的 ZaiToken 吗？可能需要一些时间。')) return;
+            const res = await api.post('/api/tokens/refresh-all', {});
+            if (res.success) {
+                alert(res.message);
+                loadTokens(); // Reload UI though process might be in background
+            } else {
+                alert(res.message || '刷新失败');
+            }
+        }
+
+        async function refreshTokenAT(id) {
+            const res = await api.post(`/api/tokens/${id}/refresh-at`, {});
+            if (res.success) {
+                loadTokens();
+            } else {
+                alert(res.detail || '更新失败');
+            }
         }
 
         async function submitAddToken() {

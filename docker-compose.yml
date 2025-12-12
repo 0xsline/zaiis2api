@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  zai2api:
+    build: .
+    container_name: zai2api
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URI=sqlite:////app/instance/zai2api.db
+      - SECRET_KEY=change_this_to_a_random_string
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./instance:/app/instance
+
