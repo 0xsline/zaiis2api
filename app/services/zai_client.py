@@ -133,6 +133,29 @@ class ZaiClient:
         }
         return payload, chat_id
 
+    async def get_models(self) -> List[Dict[str, Any]]:
+        """Fetch available models from Zai API"""
+        url = f"{settings.ZAI_BASE_URL}/api/models"
+        client = self.get_client()
+        try:
+            response = await client.get(url, headers=self.headers)
+            if response.status_code == 200:
+                data = response.json()
+                # data is expected to be a list of model objects or {models: [...]}
+                # Based on user feedback: response is a JSON list directly or similar structure?
+                # Let's assume list for now or check if it's wrapped.
+                if isinstance(data, list):
+                    return data
+                return data.get("models", [])
+            elif response.status_code == 401:
+                raise ZaiAuthError("401 Unauthorized")
+            else:
+                logger.error(f"Failed to fetch models: {response.status_code}")
+                return []
+        except Exception as e:
+            logger.error(f"Error fetching models: {e}")
+            raise e
+
     async def stream_chat(self, messages: List[Message], model: str) -> AsyncGenerator[str, None]:
         payload, chat_id = self._build_payload(messages, model)
         url = f"{settings.ZAI_BASE_URL}/api/v1/chats/{chat_id}"

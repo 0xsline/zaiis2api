@@ -101,6 +101,43 @@ async def generate_chunks(zai_client: ZaiClient, request: ChatCompletionRequest,
         duration = (time.time() - start_time) * 1000
         await log_request(db, request.model, chat_id, status_code, duration, error_msg)
 
+@router.get("/models")
+async def list_models(
+    db: AsyncSession = Depends(get_db),
+    api_key: ApiKey = Depends(verify_api_key)
+):
+    # Get a valid token to make the request
+    result = await get_valid_zai_token(db)
+    if not result:
+        # If no tokens available, return a hardcoded fallback or empty list
+        # But usually we want to try fetching real models
+        return {"object": "list", "data": []}
+    
+    token, _ = result
+    zai_client = ZaiClient(token)
+    
+    try:
+        models_data = await zai_client.get_models()
+        
+        # Transform to OpenAI format
+        openai_models = []
+        for m in models_data:
+            # Check structure of m. If it's a string, use it. If dict, find ID.
+            model_id = m.get("id") if isinstance(m, dict) else str(m)
+            # zai api returns list of model objects
+            openai_models.append({
+                "id": model_id,
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "zai"
+            })
+            
+        return {"object": "list", "data": openai_models}
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch models: {e}")
+        return {"object": "list", "data": []}
+
 @router.post("/chat/completions")
 async def chat_completions(
     request: ChatCompletionRequest,
