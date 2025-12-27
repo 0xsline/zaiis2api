@@ -1,6 +1,6 @@
 {
   "discord_tokens": [
-    "discord_token1",
+    "YOUR_DISCORD_TOKEN_HERE",
     "discord_token2"
   ],
   "discord_token_file": "discord_tokens.txt",

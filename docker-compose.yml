@@ -1,16 +1,32 @@
 version: '3.8'
 
 services:
+  browser-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
+    container_name: browser-service
+    restart: unless-stopped
+    ports:
+      - "5005:5005"
+    environment:
+      - PORT=5005
+
   zai2api:
     build: .
     container_name: zai2api
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "5001:5002"
     environment:
       - DATABASE_URI=sqlite:////app/instance/zai2api.db
       - SECRET_KEY=change_this_to_a_random_string
       - TZ=Asia/Shanghai
+      - BROWSER_SERVICE_URL=http://browser-service:5005
+      # Browser service internal hostname
+      # In app.py, we use http://localhost:5005, but in Docker it should be http://browser-service:5005
+      # We need to update app.py to support env var config for this URL.
     volumes:
       - ./instance:/app/instance
-
+    depends_on:
+      - browser-service

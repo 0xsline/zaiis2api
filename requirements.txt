@@ -4,3 +4,4 @@ flask-sqlalchemy
 requests
 apscheduler
 pyjwt
+tls-client

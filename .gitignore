@@ -1,3 +1,4 @@
 instance/zai2api.db
 *.pyc
 README copy.md
+*.log
