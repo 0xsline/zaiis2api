@@ -53,7 +53,8 @@ def proxy_request():
             page = context.new_page()
             
             # Navigate to chat to initialize DarkKnight JS environment
-            page.goto("https://zai.is/chat", wait_until="domcontentloaded", timeout=60000)
+            page.goto("https://zai.is/chat", wait_until="networkidle", timeout=60000)
+            page.wait_for_timeout(3000) # Wait for SDK init
             
             # Execute the request inside the browser using evaluate
             # This ensures the frontend SDK interceptors add the correct x-zai-darkknight header
