@@ -2,7 +2,7 @@
 
 # 配置
 APP_PORT=5003
-BROWSER_PORT=5005
+BROWSER_PORT=5006
 APP_LOG="app.log"
 BROWSER_LOG="browser.log"
 
@@ -55,6 +55,17 @@ start_services() {
     check_env
     stop_services
     
+    # 提示用户启动 Chrome
+    if ! lsof -i:9222 >/dev/null 2>&1; then
+        echo -e "${YELLOW}[!] 警告: 未检测到本地 Chrome 调试端口 (9222)${NC}"
+        echo -e "请在终端执行以下命令启动 Chrome (请修改路径适配你的系统):"
+        echo -e "${BLUE}/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --no-first-run --no-default-browser-check --user-data-dir=\$(mktemp -d -t 'chrome-remote_data_dir')${NC}"
+        echo -e "启动后，请再次运行此脚本。"
+        # exit 1  <-- 不强制退出，允许用户先起服务再起 Chrome
+    else
+        echo -e "${GREEN}[+] 检测到本地 Chrome 调试端口 (9222)${NC}"
+    fi
+    
     echo -e "${BLUE}[*] 正在启动 Browser Service (Port: $BROWSER_PORT)...${NC}"
     export PORT=$BROWSER_PORT
     nohup python3 -u browser_server.py > "$BROWSER_LOG" 2>&1 &
@@ -75,7 +86,7 @@ start_services() {
     
     echo -e "${BLUE}[*] 正在启动 Main API (Port: $APP_PORT)...${NC}"
     export PORT=$APP_PORT
-    export BROWSER_SERVICE_URL="http://localhost:$BROWSER_PORT"
+    export BROWSER_SERVICE_URL="http://127.0.0.1:$BROWSER_PORT"
     nohup python3 -u app.py > "$APP_LOG" 2>&1 &
     APID=$!
     
@@ -117,6 +128,12 @@ check_status() {
         echo -e "Main API:        ${GREEN}RUNNING (Port $APP_PORT)${NC}"
     else
         echo -e "Main API:        ${RED}STOPPED${NC}"
+    fi
+    
+    if lsof -i:9222 >/dev/null 2>&1; then
+        echo -e "Local Chrome:    ${GREEN}RUNNING (Port 9222)${NC}"
+    else
+        echo -e "Local Chrome:    ${RED}NOT DETECTED (Port 9222)${NC}"
     fi
 }
 

@@ -20,18 +20,44 @@ from core import services
 BROWSER_SERVICE_URL = os.environ.get("BROWSER_SERVICE_URL", "http://localhost:5006")
 _browser_initialized = False
 
-def _browser_proxy_request(url, method, payload, token, cookies=None):
+def _browser_proxy_request(url, method, payload, token_obj=None, retry_on_auth_fail=True):
+    # token_obj is now the Token model instance, not just the zai_token string
+    if not token_obj: return None
+    
+    # Extract params
+    zai_token = token_obj.zai_token
+    cookies = json.loads(token_obj.cookies_json) if token_obj.cookies_json else None
+    
     try:
         logger.info(f"Proxying request to browser service: {url} (method: {method}, has_cookies: {cookies is not None})")
+        # BYPASS PROXY for localhost communication
         resp = requests.post(f"{BROWSER_SERVICE_URL}/proxy", json={
             'url': url,
             'method': method,
             'payload': payload,
-            'token': token,
+            'token': zai_token,
             'cookies': cookies
-        }, timeout=120)
+        }, timeout=120, proxies={'http': None, 'https': None})
+        
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+            # Check for auth failure in the proxied response
+            status = data.get('status')
+            if retry_on_auth_fail and status in [401, 403]:
+                logger.warning(f"Auth failure ({status}) detected for token {token_obj.id}. Attempting auto-refresh...")
+                
+                # Attempt to refresh token
+                success, msg = services.update_token_info(token_obj.id)
+                if success:
+                    logger.info(f"Token {token_obj.id} refreshed successfully. Retrying request...")
+                    # Reload token from DB to get new values
+                    db.session.refresh(token_obj)
+                    return _browser_proxy_request(url, method, payload, token_obj, retry_on_auth_fail=False)
+                else:
+                    logger.error(f"Failed to auto-refresh token {token_obj.id}: {msg}")
+            
+            return data
+            
     except Exception as e:
         logger.error(f"Browser proxy request failed: {e}")
     return None
@@ -252,14 +278,21 @@ def proxy_chat_completions():
     config = SystemConfig.query.first()
     auth_header = request.headers.get('Authorization')
     if not auth_header or auth_header.split(' ')[1] != config.api_key: return jsonify({'error': 'Invalid API Key'}), 401
-    payload = request.get_json(silent=True)
+    
+    payload = request.get_json(silent=True) or {}
+    
+    # Check if client wants stream
+    want_stream = payload.get('stream', False)
+    
+    # FORCE stream=False for backend because browser execution blocks anyway
+    payload['stream'] = False
+    
     candidates = _get_token_candidates()
     if not candidates: return jsonify({'error': 'No active tokens available'}), 503
 
     for token in candidates:
-        logger.info(f"Using token {token.id} for request...")
-        cookies = json.loads(token.cookies_json) if token.cookies_json else None
-        res = _browser_proxy_request("https://zai.is/api/v1/chat/completions", "POST", payload, token.zai_token, cookies=cookies)
+        logger.info(f"Using token {token.id} for request... (Stream requested: {want_stream})")
+        res = _browser_proxy_request("https://zai.is/api/v1/chat/completions", "POST", payload, token_obj=token)
         
         if res:
             logger.info(f"Browser proxy response status: {res.get('status')}")
@@ -285,7 +318,38 @@ def proxy_chat_completions():
 
         token.error_count = 0
         db.session.commit()
-        return jsonify(res.get('body'))
+        
+        response_body = res.get('body')
+        
+        # If client wanted stream, convert JSON response to SSE stream
+        if want_stream:
+            def generate_stream():
+                # Simulate a stream by emitting the full content as one chunk (or you could split it if you wanted to be fancy)
+                # But typically one chunk is enough for clients to process.
+                
+                # Check if it's a valid OpenAI-like response
+                if isinstance(response_body, dict) and 'choices' in response_body:
+                    # Construct a delta chunk
+                    chunk = response_body.copy()
+                    chunk['object'] = 'chat.completion.chunk'
+                    # Transform message to delta
+                    if chunk['choices']:
+                        msg = chunk['choices'][0].get('message', {})
+                        chunk['choices'][0]['delta'] = msg
+                        if 'message' in chunk['choices'][0]:
+                            del chunk['choices'][0]['message']
+                        chunk['choices'][0]['finish_reason'] = 'stop'
+                    
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    yield "data: [DONE]\n\n"
+                else:
+                    # Fallback for errors or unknown formats
+                    yield f"data: {json.dumps(response_body)}\n\n"
+                    yield "data: [DONE]\n\n"
+
+            return Response(stream_with_context(generate_stream()), mimetype='text/event-stream')
+
+        return jsonify(response_body)
 
     return jsonify({'error': 'All candidates failed'}), 503
 
@@ -297,12 +361,11 @@ def proxy_models():
     token = Token.query.filter_by(is_active=True).first()
     if not token: return jsonify({"object": "list", "data": []})
     
-    cookies = json.loads(token.cookies_json) if token.cookies_json else None
-    res = _browser_proxy_request("https://zai.is/api/v1/models", "GET", None, token.zai_token, cookies=cookies)
+    res = _browser_proxy_request("https://zai.is/api/v1/models", "GET", None, token_obj=token)
     if res and res.get('status') == 200:
         return jsonify(res.get('body'))
     return jsonify({"error": "Failed to fetch models"}), 500
 
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5003, debug=True, use_reloader=False)
+    app.run(host='0.0.0.0', port=5003, debug=True, use_reloader=False, threaded=False, processes=1)
