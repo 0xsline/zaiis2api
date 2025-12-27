@@ -64,9 +64,9 @@ def test_chat():
 
             print(f"Captured Header: {dk_header[:30]}...")
 
-            print("Sending Chat Completion Request (Model: gemini-3-pro-preview)...")
+            print("Sending Chat Completion Request (Model: gemini-3-flash-preview)...")
             chat_payload = {
-                "model": "gemini-3-pro-preview",
+                "model": "gemini-3-flash-preview",
                 "messages": [{"role": "user", "content": "Hello! Who are you?"}],
                 "stream": False
             }
