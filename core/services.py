@@ -1,9 +1,9 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from extensions import db
-from models import Token, SystemConfig, RequestLog
-from zai_token import DiscordOAuthHandler
+from .extensions import db
+from .models import SystemConfig, Token, RequestLog
+from .zai_token import DiscordOAuthHandler
 import jwt # pyjwt
 from flask import current_app
 

@@ -1,8 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from playwright.sync_api import sync_playwright
 import json
-import services
+from core import services
 from app import app
-from models import Token
+from core.models import Token
 
 def test_chat():
     with app.app_context():

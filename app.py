@@ -12,9 +12,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 
-from extensions import db
-from models import SystemConfig, Token, RequestLog
-import services
+from core.extensions import db
+from core.models import SystemConfig, Token, RequestLog
+from core import services
 
 # Browser Service Config
 BROWSER_SERVICE_URL = os.environ.get("BROWSER_SERVICE_URL", "http://localhost:5006")
