@@ -17,7 +17,7 @@ services:
     container_name: zai2api
     restart: unless-stopped
     ports:
-      - "5001:5002"
+      - "5001:5003"
     environment:
       - DATABASE_URI=sqlite:////app/instance/zai2api.db
       - SECRET_KEY=change_this_to_a_random_string

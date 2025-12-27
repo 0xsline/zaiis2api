@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from playwright.sync_api import sync_playwright
+import json
 import time
 import logging
 import os
@@ -30,58 +31,85 @@ def init_browser():
 @app.route('/proxy', methods=['POST'])
 def proxy_request():
     """Execute a request inside the real browser context to bypass all protections."""
-    if not cached_data["cookies"]:
-        return jsonify({'error': 'not initialized'}), 400
-        
     data = request.json
     url = data.get('url')
     method = data.get('method', 'GET')
     payload = data.get('payload')
     jwt_token = data.get('token')
+    
+    # Improved cookie handling: check if 'cookies' key exists even if empty dict
+    req_cookies = data.get('cookies')
+    if req_cookies is None:
+        req_cookies = cached_data["cookies"]
 
-    logger.info(f"Proxying {method} request to {url}...")
+    logger.info(f"Received proxy request: {method} {url} (has_cookies: {req_cookies is not None})")
+
+    if not req_cookies:
+        return jsonify({'error': 'not initialized and no cookies provided'}), 400
     
     with sync_playwright() as p:
         browser = None
         try:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
+            browser = p.chromium.launch(headless=True, args=[
+                '--no-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-infobars',
+                '--window-size=1280,720'
+            ])
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                viewport={'width': 1280, 'height': 720}
             )
-            p_cookies = [{"name": k, "value": v, "domain": "zai.is", "path": "/"} for k, v in cached_data["cookies"].items()]
+            # Use provided cookies or cached ones
+            p_cookies = [{"name": k, "value": v, "domain": "zai.is", "path": "/"} for k, v in req_cookies.items()]
             context.add_cookies(p_cookies)
             page = context.new_page()
             
+            # Mask automation
+            page.evaluate("() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }) }")
+            
             # Navigate to chat to initialize DarkKnight JS environment
             page.goto("https://zai.is/chat", wait_until="networkidle", timeout=60000)
-            page.wait_for_timeout(3000) # Wait for SDK init
             
-            # Execute the request inside the browser using evaluate
-            # This ensures the frontend SDK interceptors add the correct x-zai-darkknight header
-            result = page.evaluate("""
-                async ({url, method, payload, token}) => {
-                    const options = {
-                        method: method,
-                        headers: {
-                            'Authorization': 'Bearer ' + token,
-                            'Content-Type': 'application/json'
-                        }
-                    };
-                    if (payload) options.body = JSON.stringify(payload);
-                    
-                    const resp = await fetch(url, options);
-                    const text = await resp.text();
-                    let body = text;
-                    try { body = JSON.parse(text); } catch(e) {}
-                    
-                    return {
-                        status: resp.status,
-                        body: body
-                    };
-                }
-            """, {'url': url, 'method': method, 'payload': payload, 'token': jwt_token})
+            # Simulate a bit of human-like delay and "activity"
+            page.wait_for_timeout(10000) 
+            page.mouse.move(100, 100)
+            page.mouse.move(200, 200)
+
+            method = (method or "GET").upper()
             
-            return jsonify(result)
+            try:
+                # Execute fetch directly in the page context. 
+                # This should naturally trigger all browser-side protections (DarkKnight, etc.)
+                result = page.evaluate("""
+                    async ({url, method, payload, token}) => {
+                        const options = {
+                            method: method,
+                            headers: {
+                                'Authorization': 'Bearer ' + token,
+                                'Content-Type': 'application/json'
+                            }
+                        };
+                        if (payload && method !== 'GET') options.body = JSON.stringify(payload);
+                        
+                        const resp = await fetch(url, options);
+                        const text = await resp.text();
+                        let body = text;
+                        try { body = JSON.parse(text); } catch (e) {}
+                        
+                        return {
+                            status: resp.status,
+                            body: body
+                        };
+                    }
+                """, {'url': url, 'method': method, 'payload': payload, 'token': jwt_token})
+                
+                return jsonify(result)
+
+            except Exception as e:
+                logger.error(f"In-page fetch failed: {e}")
+                # Fallback or just report error
+                return jsonify({'error': str(e)}), 500
             
         except Exception as e:
             logger.error(f"Proxy error: {e}")

@@ -31,6 +31,7 @@ class Token(db.Model):
     email = db.Column(db.String(120), nullable=True) # Got from Zai
     discord_token = db.Column(db.String(512), nullable=False) # ST
     zai_token = db.Column(db.Text, nullable=True) # AT (JWT)
+    cookies_json = db.Column(db.Text, nullable=True) # Store cookies for browser service
     at_expires = db.Column(db.DateTime, nullable=True)
     
     is_active = db.Column(db.Boolean, default=True)

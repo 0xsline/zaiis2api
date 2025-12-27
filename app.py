@@ -20,28 +20,15 @@ from core import services
 BROWSER_SERVICE_URL = os.environ.get("BROWSER_SERVICE_URL", "http://localhost:5006")
 _browser_initialized = False
 
-def _ensure_browser_service_initialized():
-    global _browser_initialized
-    if _browser_initialized: return
+def _browser_proxy_request(url, method, payload, token, cookies=None):
     try:
-        token = Token.query.filter_by(is_active=True).first()
-        if not token: return
-        handler = services.get_zai_handler()
-        res = handler.backend_login(token.discord_token)
-        if 'error' not in res:
-            cookies = handler.session.cookies.get_dict()
-            requests.post(f"{BROWSER_SERVICE_URL}/init", json={'cookies': cookies}, timeout=5)
-            _browser_initialized = True
-    except: pass
-
-def _browser_proxy_request(url, method, payload, token):
-    _ensure_browser_service_initialized()
-    try:
+        logger.info(f"Proxying request to browser service: {url} (method: {method}, has_cookies: {cookies is not None})")
         resp = requests.post(f"{BROWSER_SERVICE_URL}/proxy", json={
             'url': url,
             'method': method,
             'payload': payload,
-            'token': token
+            'token': token,
+            'cookies': cookies
         }, timeout=120)
         if resp.status_code == 200:
             return resp.json()
@@ -98,11 +85,10 @@ def migrate_sqlite_schema():
             if 'error_retry_count' not in sc_cols: cur.execute("ALTER TABLE system_config ADD COLUMN error_retry_count INTEGER DEFAULT 3")
             if 'token_refresh_interval' not in sc_cols: cur.execute("ALTER TABLE system_config ADD COLUMN token_refresh_interval INTEGER DEFAULT 3600")
             if 'stream_conversion_enabled' not in sc_cols: cur.execute("ALTER TABLE system_config ADD COLUMN stream_conversion_enabled BOOLEAN DEFAULT 0")
-        cursor.execute("PRAGMA table_info(request_log)")
-        rl_cols = {row[1] for row in cursor.fetchall()}
-        if rl_cols:
-            if 'discord_token' not in rl_cols: cur.execute("ALTER TABLE request_log ADD COLUMN discord_token TEXT")
-            if 'zai_token' not in rl_cols: cur.execute("ALTER TABLE request_log ADD COLUMN zai_token TEXT")
+        cursor.execute("PRAGMA table_info(token)")
+        t_cols = {row[1] for row in cursor.fetchall()}
+        if t_cols:
+            if 'cookies_json' not in t_cols: cur.execute("ALTER TABLE token ADD COLUMN cookies_json TEXT")
         conn.commit()
     finally: conn.close()
 
@@ -272,7 +258,8 @@ def proxy_chat_completions():
 
     for token in candidates:
         logger.info(f"Using token {token.id} for request...")
-        res = _browser_proxy_request("https://zai.is/api/v1/chat/completions", "POST", payload, token.zai_token)
+        cookies = json.loads(token.cookies_json) if token.cookies_json else None
+        res = _browser_proxy_request("https://zai.is/api/v1/chat/completions", "POST", payload, token.zai_token, cookies=cookies)
         if not res or 'error' in res:
             error_msg = res.get('error', 'Browser proxy failed') if res else 'Network Error'
             _mark_token_error(token, config, error_msg)
@@ -302,7 +289,8 @@ def proxy_models():
     token = Token.query.filter_by(is_active=True).first()
     if not token: return jsonify({"object": "list", "data": []})
     
-    res = _browser_proxy_request("https://zai.is/api/v1/models", "GET", None, token.zai_token)
+    cookies = json.loads(token.cookies_json) if token.cookies_json else None
+    res = _browser_proxy_request("https://zai.is/api/v1/models", "GET", None, token.zai_token, cookies=cookies)
     if res and res.get('status') == 200:
         return jsonify(res.get('body'))
     return jsonify({"error": "Failed to fetch models"}), 500

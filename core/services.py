@@ -1,5 +1,6 @@
 import logging
 import time
+import json
 from datetime import datetime, timedelta
 from .extensions import db
 from .models import SystemConfig, Token, RequestLog
@@ -43,6 +44,10 @@ def update_token_info(token_id, use_oauth=False):
         token.remark = f"Refresh failed: {result['error']}"
         db.session.commit()
         return False, result['error']
+
+    # Save cookies
+    cookies = handler.session.cookies.get_dict()
+    token.cookies_json = json.dumps(cookies)
 
     at = result.get('token')
     user_info = result.get('user_info', {})
