@@ -260,6 +260,14 @@ def proxy_chat_completions():
         logger.info(f"Using token {token.id} for request...")
         cookies = json.loads(token.cookies_json) if token.cookies_json else None
         res = _browser_proxy_request("https://zai.is/api/v1/chat/completions", "POST", payload, token.zai_token, cookies=cookies)
+        
+        if res:
+            logger.info(f"Browser proxy response status: {res.get('status')}")
+            if res.get('status', 0) >= 400:
+                logger.error(f"Browser proxy error body: {res.get('body')}")
+        else:
+            logger.error("Browser proxy returned None")
+
         if not res or 'error' in res:
             error_msg = res.get('error', 'Browser proxy failed') if res else 'Network Error'
             _mark_token_error(token, config, error_msg)

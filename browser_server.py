@@ -65,30 +65,50 @@ def proxy_request():
             context.add_cookies(p_cookies)
             page = context.new_page()
             
-            # Mask automation
-            page.evaluate("() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }) }")
-            
+            # Forward browser console to python logger
+            page.on("console", lambda msg: logger.info(f"Browser console: {msg.text}"))
+            page.on("pageerror", lambda exc: logger.error(f"Browser page error: {exc}"))
+
             # Navigate to chat to initialize DarkKnight JS environment
+            # and wait for it to make its own requests so we can capture the header.
+            dk_header = {"value": None}
+            
+            def intercept_headers(request):
+                header = request.headers.get("x-zai-darkknight")
+                if header and not dk_header["value"]:
+                    dk_header["value"] = header
+                    logger.info("Captured x-zai-darkknight header from page request.")
+
+            page.on("request", intercept_headers)
+            
+            logger.info("Navigating to zai.is/chat...")
             page.goto("https://zai.is/chat", wait_until="networkidle", timeout=60000)
             
-            # Simulate a bit of human-like delay and "activity"
-            page.wait_for_timeout(10000) 
-            page.mouse.move(100, 100)
-            page.mouse.move(200, 200)
+            # Wait for header capture or timeout
+            for _ in range(40): # 20 seconds
+                if dk_header["value"]: break
+                page.wait_for_timeout(500)
+            
+            if not dk_header["value"]:
+                logger.warning("Failed to capture header naturally, waiting a bit more...")
+                page.wait_for_timeout(5000)
 
             method = (method or "GET").upper()
             
             try:
                 # Execute fetch directly in the page context. 
-                # This should naturally trigger all browser-side protections (DarkKnight, etc.)
                 result = page.evaluate("""
-                    async ({url, method, payload, token}) => {
+                    async ({url, method, payload, token, capturedDK}) => {
+                        const headers = {
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json'
+                        };
+                        // If we captured a header, use it as a baseline or backup
+                        if (capturedDK) headers['x-zai-darkknight'] = capturedDK;
+                        
                         const options = {
                             method: method,
-                            headers: {
-                                'Authorization': 'Bearer ' + token,
-                                'Content-Type': 'application/json'
-                            }
+                            headers: headers
                         };
                         if (payload && method !== 'GET') options.body = JSON.stringify(payload);
                         
@@ -102,8 +122,9 @@ def proxy_request():
                             body: body
                         };
                     }
-                """, {'url': url, 'method': method, 'payload': payload, 'token': jwt_token})
+                """, {'url': url, 'method': method, 'payload': payload, 'token': jwt_token, 'capturedDK': dk_header["value"]})
                 
+                logger.info(f"Fetch completed with status {result.get('status')}")
                 return jsonify(result)
 
             except Exception as e:
